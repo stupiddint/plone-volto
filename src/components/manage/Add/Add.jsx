@@ -3,7 +3,7 @@
  * @module components/manage/Add/Add
  */
 
-import React, { Component } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { BodyClass, Helmet } from '@plone/volto/helpers';
 import { connect } from 'react-redux';
@@ -71,13 +71,19 @@ const messages = defineMessages({
  * @class Add
  * @extends Component
  */
-class Add extends Component {
+let initialBlocks;
+let initialBlocksLayout;
+
+const Add = (props) => {
+  const [isClient, setIsClient] = useState(false);
+  const [error, setError] = useState(null);
+  const [formSelected, setFormSelected] = useState('addForm');
   /**
    * Property types.
    * @property {Object} propTypes Property types.
    * @static
    */
-  static propTypes = {
+  Add.propTypes = {
     createContent: PropTypes.func.isRequired,
     getSchema: PropTypes.func.isRequired,
     pathname: PropTypes.string.isRequired,
@@ -105,7 +111,7 @@ class Add extends Component {
    * @property {Object} defaultProps Default properties.
    * @static
    */
-  static defaultProps = {
+  Add.defaultProps = {
     schema: null,
     content: null,
     returnUrl: null,
@@ -118,16 +124,13 @@ class Add extends Component {
    * @param {Object} props Component properties
    * @constructs WysiwygEditor
    */
-  constructor(props) {
-    super(props);
-    this.onCancel = this.onCancel.bind(this);
-    this.onSubmit = this.onSubmit.bind(this);
 
+  useEffect(() => {
     if (config.blocks?.initialBlocks[props.type]) {
-      this.initialBlocksLayout = config.blocks.initialBlocks[
+      initialBlocksLayout = config.blocks.initialBlocks[
         props.type
       ].map((item) => uuid());
-      this.initialBlocks = this.initialBlocksLayout.reduce(
+      initialBlocks = initialBlocksLayout.reduce(
         (acc, value, index) => ({
           ...acc,
           [value]: { '@type': config.blocks.initialBlocks[props.type][index] },
@@ -135,22 +138,20 @@ class Add extends Component {
         {},
       );
     }
-    this.state = {
-      isClient: false,
-      error: null,
-      formSelected: 'addForm',
-    };
-  }
+    getSchema(props.type, getBaseUrl(props.pathname));
+    setIsClient(true);
+  }, []);
+  // };
 
   /**
    * Component did mount
    * @method componentDidMount
    * @returns {undefined}
    */
-  componentDidMount() {
-    this.props.getSchema(this.props.type, getBaseUrl(this.props.pathname));
-    this.setState({ isClient: true });
-  }
+  useEffect(() => {
+    props.getSchema(props.type, getBaseUrl(props.pathname));
+    setIsClient(true);
+  }, []);
 
   /**
    * Component will receive props
@@ -158,18 +159,18 @@ class Add extends Component {
    * @param {Object} nextProps Next properties
    * @returns {undefined}
    */
-  UNSAFE_componentWillReceiveProps(nextProps) {
+  useEffect((nextProps) => {
     if (
-      this.props.createRequest.loading &&
+      props.createRequest.loading &&
       nextProps.createRequest.loaded &&
-      nextProps.content['@type'] === this.props.type
+      nextProps.content['@type'] === props.type
     ) {
-      this.props.history.push(
-        this.props.returnUrl || flattenToAppURL(nextProps.content['@id']),
+      props.history.push(
+        props.returnUrl || flattenToAppURL(nextProps.content['@id']),
       );
     }
 
-    if (this.props.createRequest.loading && nextProps.createRequest.error) {
+    if (props.createRequest.loading && nextProps.createRequest.error) {
       const message =
         nextProps.createRequest.error.response?.body?.message ||
         nextProps.createRequest.error.response?.text;
@@ -178,17 +179,17 @@ class Add extends Component {
         new DOMParser().parseFromString(message, 'text/html')?.all[0]
           ?.textContent || message;
 
-      this.setState({ error: error });
+      setError(error);
 
       toast.error(
         <Toast
           error
-          title={this.props.intl.formatMessage(messages.error)}
+          title={props.intl.formatMessage(messages.error)}
           content={`${nextProps.createRequest.error.status}:  ${error}`}
         />,
       );
     }
-  }
+  }, []);
 
   /**
    * Submit handler
@@ -196,17 +197,17 @@ class Add extends Component {
    * @param {object} data Form data.
    * @returns {undefined}
    */
-  onSubmit(data) {
-    this.props.createContent(getBaseUrl(this.props.pathname), {
+  function onSubmit(data) {
+    props.createContent(getBaseUrl(props.pathname), {
       ...data,
-      '@static_behaviors': this.props.schema.definitions
-        ? keys(this.props.schema.definitions)
+      '@static_behaviors': props.schema.definitions
+        ? keys(props.schema.definitions)
         : null,
-      '@type': this.props.type,
+      '@type': props.type,
       ...(config.settings.isMultilingual &&
-        this.props.location?.state?.translationOf && {
-          translation_of: this.props.location.state.translationOf,
-          language: this.props.location.state.language,
+        props.location?.state?.translationOf && {
+          translation_of: props.location.state.translationOf,
+          language: props.location.state.language,
         }),
     });
   }
@@ -216,236 +217,232 @@ class Add extends Component {
    * @method onCancel
    * @returns {undefined}
    */
-  onCancel() {
-    if (this.props.location?.state?.translationOf) {
-      const language = this.props.location.state.languageFrom;
+  function onCancel() {
+    if (props.location?.state?.translationOf) {
+      const language = props.location.state.languageFrom;
       const langFileName = normalizeLanguageName(language);
       import('@root/../locales/' + langFileName + '.json').then((locale) => {
-        this.props.changeLanguage(language, locale.default);
+        props.changeLanguage(language, locale.default);
       });
-      this.props.history.push(this.props.location?.state?.translationOf);
+      props.history.push(props.location?.state?.translationOf);
     } else {
-      this.props.history.push(getBaseUrl(this.props.pathname));
+      props.history.push(getBaseUrl(props.pathname));
     }
   }
 
-  form = React.createRef();
+  const form = useRef();
 
   /**
    * Render method.
    * @method render
    * @returns {string} Markup for the component.
    */
-  render() {
-    if (this.props.schemaRequest.loaded) {
-      const visual = hasBlocksData(this.props.schema.properties);
-      const blocksFieldname = getBlocksFieldname(this.props.schema.properties);
-      const blocksLayoutFieldname = getBlocksLayoutFieldname(
-        this.props.schema.properties,
-      );
-      const translationObject = this.props.location?.state?.translationObject;
 
-      const translateTo = translationObject
-        ? langmap?.[this.props.location?.state?.language]?.nativeName
-        : null;
+  if (props.schemaRequest.loaded) {
+    const visual = hasBlocksData(props.schema.properties);
+    const blocksFieldname = getBlocksFieldname(props.schema.properties);
+    const blocksLayoutFieldname = getBlocksLayoutFieldname(
+      props.schema.properties,
+    );
+    const translationObject = props.location?.state?.translationObject;
 
-      // Lookup initialBlocks and initialBlocksLayout within schema
-      const schemaBlocks = this.props.schema.properties[blocksFieldname]
-        ?.default;
-      const schemaBlocksLayout = this.props.schema.properties[
-        blocksLayoutFieldname
-      ]?.default?.items;
-      let initialBlocks = this.initialBlocks;
-      let initialBlocksLayout = this.initialBlocksLayout;
+    const translateTo = translationObject
+      ? langmap?.[props.location?.state?.language]?.nativeName
+      : null;
 
-      if (!isEmpty(schemaBlocksLayout) && !isEmpty(schemaBlocks)) {
-        initialBlocks = {};
-        initialBlocksLayout = [];
-        schemaBlocksLayout.forEach((value) => {
-          if (!isEmpty(schemaBlocks[value])) {
-            let newUid = uuid();
-            initialBlocksLayout.push(newUid);
-            initialBlocks[newUid] = schemaBlocks[value];
-            initialBlocks[newUid].block = newUid;
+    // Lookup initialBlocks and initialBlocksLayout within schema
+    const schemaBlocks = props.schema.properties[blocksFieldname]?.default;
+    const schemaBlocksLayout =
+      props.schema.properties[blocksLayoutFieldname]?.default?.items;
 
-            // Layout ID - keep a reference to the original block id within layout
-            initialBlocks[newUid]['@layout'] = value;
-          }
-        });
-      }
-      //copy blocks from translationObject
-      if (translationObject && blocksFieldname && blocksLayoutFieldname) {
-        initialBlocks = {};
-        initialBlocksLayout = [];
-        const originalBlocks = JSON.parse(
-          JSON.stringify(translationObject[blocksFieldname]),
-        );
-        const originalBlocksLayout =
-          translationObject[blocksLayoutFieldname].items;
+    if (!isEmpty(schemaBlocksLayout) && !isEmpty(schemaBlocks)) {
+      // setInitialBlocks({});
+      // setInitialBlocksLayout([]);
+      initialBlocks = {};
+      initialBlocksLayout = [];
+      schemaBlocksLayout.forEach((value) => {
+        if (!isEmpty(schemaBlocks[value])) {
+          let newUid = uuid();
+          initialBlocksLayout.push(newUid);
+          initialBlocks[newUid] = schemaBlocks[value];
+          initialBlocks[newUid].block = newUid;
 
-        originalBlocksLayout.forEach((value) => {
-          if (!isEmpty(originalBlocks[value])) {
-            let newUid = uuid();
-            initialBlocksLayout.push(newUid);
-            initialBlocks[newUid] = originalBlocks[value];
-            initialBlocks[newUid].block = newUid;
-
-            // Layout ID - keep a reference to the original block id within layout
-            initialBlocks[newUid]['@canonical'] = value;
-          }
-        });
-      }
-
-      const lifData = () => {
-        const data = {};
-        if (translationObject) {
-          getLanguageIndependentFields(this.props.schema).forEach(
-            (lif) => (data[lif] = translationObject[lif]),
-          );
+          // Layout ID - keep a reference to the original block id within layout
+          initialBlocks[newUid]['@layout'] = value;
         }
-        return data;
-      };
-
-      const pageAdd = (
-        <div id="page-add">
-          <Helmet
-            title={this.props.intl.formatMessage(messages.add, {
-              type: this.props.type,
-            })}
-          />
-          <Form
-            ref={this.form}
-            key="translated-or-new-content-form"
-            schema={this.props.schema}
-            type={this.props.type}
-            formData={{
-              ...(blocksFieldname && {
-                [blocksFieldname]:
-                  initialBlocks ||
-                  this.props.schema.properties[blocksFieldname]?.default,
-              }),
-              ...(blocksLayoutFieldname && {
-                [blocksLayoutFieldname]: {
-                  items:
-                    initialBlocksLayout ||
-                    this.props.schema.properties[blocksLayoutFieldname]?.default
-                      ?.items,
-                },
-              }),
-              // Copy the Language Independent Fields values from the to-be translated content
-              // into the default values of the translated content Add form.
-              ...lifData(),
-            }}
-            requestError={this.state.error}
-            onSubmit={this.onSubmit}
-            hideActions
-            pathname={this.props.pathname}
-            visual={visual}
-            title={
-              this.props?.schema?.title
-                ? this.props.intl.formatMessage(messages.add, {
-                    type: this.props.schema.title,
-                  })
-                : null
-            }
-            loading={this.props.createRequest.loading}
-            isFormSelected={this.state.formSelected === 'addForm'}
-            onSelectForm={() => {
-              this.setState({ formSelected: 'addForm' });
-            }}
-          />
-          {this.state.isClient && (
-            <Portal node={document.getElementById('toolbar')}>
-              <Toolbar
-                pathname={this.props.pathname}
-                hideDefaultViewButtons
-                inner={
-                  <>
-                    <Button
-                      id="toolbar-save"
-                      className="save"
-                      aria-label={this.props.intl.formatMessage(messages.save)}
-                      onClick={() => this.form.current.onSubmit()}
-                      loading={this.props.createRequest.loading}
-                    >
-                      <Icon
-                        name={saveSVG}
-                        className="circled"
-                        size="30px"
-                        title={this.props.intl.formatMessage(messages.save)}
-                      />
-                    </Button>
-                    <Button className="cancel" onClick={() => this.onCancel()}>
-                      <Icon
-                        name={clearSVG}
-                        className="circled"
-                        aria-label={this.props.intl.formatMessage(
-                          messages.cancel,
-                        )}
-                        size="30px"
-                        title={this.props.intl.formatMessage(messages.cancel)}
-                      />
-                    </Button>
-                  </>
-                }
-              />
-            </Portal>
-          )}
-          {visual && this.state.isClient && (
-            <Portal node={document.getElementById('sidebar')}>
-              <Sidebar />
-            </Portal>
-          )}
-        </div>
-      );
-
-      return translationObject ? (
-        <>
-          <BodyClass className="babel-view" />
-          <Grid
-            celled="internally"
-            stackable
-            columns={2}
-            id="page-add-translation"
-          >
-            <Grid.Column className="source-object">
-              <TranslationObject
-                translationObject={translationObject}
-                schema={this.props.schema}
-                pathname={this.props.pathname}
-                visual={visual}
-                isFormSelected={
-                  this.state.formSelected === 'translationObjectForm'
-                }
-                onSelectForm={() => {
-                  this.setState({
-                    formSelected: 'translationObjectForm',
-                  });
-                }}
-              />
-            </Grid.Column>
-            <Grid.Column>
-              <div className="new-translation">
-                <Menu pointing secondary attached tabular>
-                  <Menu.Item name={translateTo.toUpperCase()} active={true}>
-                    {`${this.props.intl.formatMessage(messages.translateTo, {
-                      lang: translateTo,
-                    })}`}
-                  </Menu.Item>
-                </Menu>
-                {pageAdd}
-              </div>
-            </Grid.Column>
-          </Grid>
-        </>
-      ) : (
-        pageAdd
-      );
+      });
     }
-    return <div />;
-  }
-}
 
+    //copy blocks from translationObject
+    if (translationObject && blocksFieldname && blocksLayoutFieldname) {
+      // setInitialBlocks({});
+      // setInitialBlocksLayout([]);
+      initialBlocks = {};
+      initialBlocksLayout = [];
+      const originalBlocks = JSON.parse(
+        JSON.stringify(translationObject[blocksFieldname]),
+      );
+      const originalBlocksLayout =
+        translationObject[blocksLayoutFieldname].items;
+
+      originalBlocksLayout.forEach((value) => {
+        if (!isEmpty(originalBlocks[value])) {
+          let newUid = uuid();
+          initialBlocksLayout.push(newUid);
+          initialBlocks[newUid] = originalBlocks[value];
+          initialBlocks[newUid].block = newUid;
+
+          // Layout ID - keep a reference to the original block id within layout
+          initialBlocks[newUid]['@canonical'] = value;
+        }
+      });
+    }
+
+    const lifData = () => {
+      const data = {};
+      if (translationObject) {
+        getLanguageIndependentFields(props.schema).forEach(
+          (lif) => (data[lif] = translationObject[lif]),
+        );
+      }
+      return data;
+    };
+
+    const pageAdd = (
+      <div id="page-add">
+        <Helmet
+          title={props.intl.formatMessage(messages.add, {
+            type: props.type,
+          })}
+        />
+        <Form
+          ref={form}
+          key="translated-or-new-content-form"
+          schema={props.schema}
+          type={props.type}
+          formData={{
+            ...(blocksFieldname && {
+              [blocksFieldname]:
+                initialBlocks ||
+                props.schema.properties[blocksFieldname]?.default,
+            }),
+            ...(blocksLayoutFieldname && {
+              [blocksLayoutFieldname]: {
+                items:
+                  initialBlocksLayout ||
+                  props.schema.properties[blocksLayoutFieldname]?.default
+                    ?.items,
+              },
+            }),
+            // Copy the Language Independent Fields values from the to-be translated content
+            // into the default values of the translated content Add form.
+            ...lifData(),
+          }}
+          requestError={error}
+          onSubmit={onSubmit}
+          hideActions
+          pathname={props.pathname}
+          visual={visual}
+          title={
+            props?.schema?.title
+              ? props.intl.formatMessage(messages.add, {
+                  type: props.schema.title,
+                })
+              : null
+          }
+          loading={props.createRequest.loading}
+          isFormSelected={formSelected === 'addForm'}
+          onSelectForm={() => {
+            setFormSelected('addForm');
+          }}
+        />
+        {isClient && (
+          <Portal node={document.getElementById('toolbar')}>
+            <Toolbar
+              pathname={props.pathname}
+              hideDefaultViewButtons
+              inner={
+                <>
+                  <Button
+                    id="toolbar-save"
+                    className="save"
+                    aria-label={props.intl.formatMessage(messages.save)}
+                    onClick={() => form.current.onSubmit()}
+                    loading={props.createRequest.loading}
+                  >
+                    <Icon
+                      name={saveSVG}
+                      className="circled"
+                      size="30px"
+                      title={props.intl.formatMessage(messages.save)}
+                    />
+                  </Button>
+                  <Button className="cancel" onClick={() => onCancel()}>
+                    <Icon
+                      name={clearSVG}
+                      className="circled"
+                      aria-label={props.intl.formatMessage(messages.cancel)}
+                      size="30px"
+                      title={props.intl.formatMessage(messages.cancel)}
+                    />
+                  </Button>
+                </>
+              }
+            />
+          </Portal>
+        )}
+        {visual && isClient && (
+          <Portal node={document.getElementById('sidebar')}>
+            <Sidebar />
+          </Portal>
+        )}
+      </div>
+    );
+    // functional component return
+    return translationObject ? (
+      <>
+        <BodyClass className="babel-view" />
+        <Grid
+          celled="internally"
+          stackable
+          columns={2}
+          id="page-add-translation"
+        >
+          <Grid.Column className="source-object">
+            <TranslationObject
+              translationObject={translationObject}
+              schema={props.schema}
+              pathname={props.pathname}
+              visual={visual}
+              isFormSelected={setFormSelected('translationObjectForm')}
+              onSelectForm={() => {
+                setState({
+                  formSelected: 'translationObjectForm',
+                });
+              }}
+            />
+          </Grid.Column>
+          <Grid.Column>
+            <div className="new-translation">
+              <Menu pointing secondary attached tabular>
+                <Menu.Item name={translateTo.toUpperCase()} active={true}>
+                  {`${props.intl.formatMessage(messages.translateTo, {
+                    lang: translateTo,
+                  })}`}
+                </Menu.Item>
+              </Menu>
+              {pageAdd}
+            </div>
+          </Grid.Column>
+        </Grid>
+      </>
+    ) : (
+      pageAdd
+    );
+  }
+
+  return <div />;
+};
 export default compose(
   injectIntl,
   connect(
